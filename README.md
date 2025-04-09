@@ -41,6 +41,29 @@ java --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
     --kafka.brokerConnect=<host:port,host:port>,...
 ```
 
+## Running for Klar
+
+You can run a local copy that contains all generated Protobuf Descriptors and Kafdrop will automatically use those to
+present the messages in a nicely deserialized form when you click on "View Messages" or "All Messages". Kafdrop uses 
+the value of the header `spring.kafka.serialization.selector` which is a custom header used by Klar in Kafka to
+specify which class to use for deserialization.
+
+<img alt="auto-protobuf-desc" src="./img/ss1.png" />
+
+You need to put the protobuf descriptors on a folder; either the ones you're building locally in some project or by
+getting the current list of descriptors from `s3://klar-devops-kafdrop-protobuf-descriptions/protobuf`
+
+```shell
+mkdir -p ./protobuf-descs
+# aws s3 cp s3://klar-devops-kafdrop-protobuf-descriptions/protobuf/ ./protobuf-descs --recursive
+# or
+# cp ~/github/klar-mx/loan-service/common/target/generated-resources/proto-descs/* ./protobuf-descs
+java --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
+    -jar target/kafdrop-4.1.1-SNAPSHOT.jar \
+    --protobufdesc.directory=$PWD/protobuf-descs \
+    --kafka.brokerConnect=$KAFKA_BROKER
+```
+
 If unspecified, `kafka.brokerConnect` defaults to `localhost:9092`.
 
 **Note:** As of Kafdrop 3.10.0, a ZooKeeper connection is no longer required. All necessary cluster information is retrieved via the Kafka admin API.

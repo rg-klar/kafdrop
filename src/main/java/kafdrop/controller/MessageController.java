@@ -124,9 +124,25 @@ public final class MessageController {
     model.addAttribute("keyFormats", KeyFormat.values());
     model.addAttribute("descFiles", protobufProperties.getDescFilesList());
 
-    final var deserializers = new Deserializers(
-      getDeserializer(topicName, defaultKeyFormat, "", "", protobufProperties.getParseAnyProto()),
-      getDeserializer(topicName, defaultFormat, "", "", protobufProperties.getParseAnyProto()));
+    PartitionOffsetInfo messageForm = new PartitionOffsetInfo();
+    model.addAttribute("messageForm", messageForm);
+
+    boolean descFileFound =
+      automaticallySetProtoFormat(topicName, messageForm, model, defaultKeyFormat, defaultFormat);
+    Deserializers deserializers;
+
+    if (!descFileFound) {
+      deserializers = new Deserializers(
+        getDeserializer(topicName, defaultKeyFormat, "", "", protobufProperties.getParseAnyProto()),
+        getDeserializer(topicName, defaultFormat, "", "", protobufProperties.getParseAnyProto()));
+    } else {
+      deserializers = new Deserializers(
+        getDeserializer(topicName, messageForm.getKeyFormat(), messageForm.getDescFile(),
+          messageForm.getMsgTypeName(), messageForm.getIsAnyProto()),
+        getDeserializer(topicName, messageForm.getFormat(), messageForm.getDescFile(), messageForm.getMsgTypeName(),
+          messageForm.getIsAnyProto())
+      );
+    }
 
     final List<MessageVO> messages = messageInspector.getMessages(topicName, size, deserializers);
 
@@ -164,8 +180,8 @@ public final class MessageController {
     if (messageForm.isEmpty()) {
       final PartitionOffsetInfo defaultForm = new PartitionOffsetInfo();
 
-      defaultForm.setCount(100l);
-      defaultForm.setOffset(0l);
+      defaultForm.setCount(100L);
+      defaultForm.setOffset(0L);
       defaultForm.setPartition(0);
       defaultForm.setFormat(defaultFormat);
       defaultForm.setKeyFormat(defaultKeyFormat);
@@ -177,16 +193,23 @@ public final class MessageController {
     final TopicVO topic = kafkaMonitor.getTopic(topicName)
       .orElseThrow(() -> new TopicNotFoundException(topicName));
     model.addAttribute("topic", topic);
-    // pre-select a descriptor file for a specific topic if available
-    model.addAttribute("defaultDescFile", protobufProperties.getDescFilesList().stream()
-      .filter(descFile -> descFile.replace(".desc", "").equals(topicName)).findFirst().orElse(""));
 
-    model.addAttribute("defaultFormat", defaultFormat);
+    boolean descFileFound =
+      automaticallySetProtoFormat(topicName, messageForm, model, defaultKeyFormat, defaultFormat);
+
+    if (!descFileFound) {
+      // pre-select a descriptor file for a specific topic if available, based on the topic name
+      model.addAttribute("defaultDescFile", protobufProperties.getDescFilesList().stream()
+      .filter(descFile -> descFile.replace(".desc", "").equals(topicName)).findFirst().orElse(""));
+      model.addAttribute("defaultFormat", defaultFormat);
+    }
+
     model.addAttribute("messageFormats", MessageFormat.values());
     model.addAttribute("defaultKeyFormat", defaultKeyFormat);
     model.addAttribute("keyFormats", KeyFormat.values());
     model.addAttribute("descFiles", protobufProperties.getDescFilesList());
     model.addAttribute("isAnyProtoOpts", List.of(true, false));
+
 
     if (!messageForm.isEmpty() && !errors.hasErrors()) {
 
@@ -207,6 +230,46 @@ public final class MessageController {
     }
 
     return "message-inspector";
+  }
+
+  private boolean automaticallySetProtoFormat(String topicName, PartitionOffsetInfo messageForm, Model model, MessageFormat defaultKeyFormat, MessageFormat defaultFormat) {
+    // Try to automatically find the descriptor
+    final var peekDeserializers = new Deserializers(
+      getDeserializer(topicName, defaultKeyFormat, "", "", protobufProperties.getParseAnyProto()),
+      getDeserializer(topicName, defaultFormat, "", "", protobufProperties.getParseAnyProto()));
+
+    boolean descFileFound = false;
+    List<MessageVO> peekMsgs = messageInspector.getMessages(topicName, 0, 0, 1, peekDeserializers);
+    if (!peekMsgs.isEmpty()) {
+      MessageVO peekMsg = peekMsgs.get(0);
+      // mx.klar.loan.proto.LoanOfferProtos$LoanOfferRequestEvent
+      // files are named without package name s3://klar-devops-kafdrop-protobuf-descriptions/protobuf/CreditCardInfoProtos.desc
+      String selector = (String) peekMsg.getHeaders().get("spring.kafka.serialization.selector");
+      if (selector != null) {
+        String[] parts = selector.split("\\$");
+        if (parts.length > 1) {
+          String defName = parts[0].substring(parts[0].lastIndexOf(".") + 1);
+          String descFileName =  defName + ".desc";
+          String loadedFile = protobufProperties.getDescFilesList().stream()
+            .filter(descFile -> descFile.equals(descFileName)).findFirst().orElse(null);
+          if ( loadedFile != null ) {
+            model.addAttribute("defaultDescFile", loadedFile);
+            if ( messageForm != null ) {
+              messageForm.setDescFile(loadedFile);
+              messageForm.setMsgTypeName(parts[1]);
+              messageForm.setFormat(MessageFormat.PROTOBUF);
+            }
+
+            PartitionOffsetInfo info = (PartitionOffsetInfo) model.getAttribute("messageForm");
+            info.setFormat(MessageFormat.PROTOBUF);
+
+            model.addAttribute("defaultFormat", MessageFormat.PROTOBUF);
+            descFileFound = true;
+          }
+        }
+      }
+    }
+    return descFileFound;
   }
 
   @PostMapping("/topic/{name:.+}/addmessage")
