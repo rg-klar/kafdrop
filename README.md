@@ -34,13 +34,6 @@ Optional, additional integration:
 # Getting Started
 You can run the Kafdrop JAR directly, via Docker, or in Kubernetes.
 
-## Running from JAR
-```sh
-java --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
-    -jar target/kafdrop-<version>.jar \
-    --kafka.brokerConnect=<host:port,host:port>,...
-```
-
 ## Running for Klar
 
 You can run a local copy that contains all generated Protobuf Descriptors and Kafdrop will automatically use those to
@@ -62,6 +55,13 @@ java --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
     -jar target/kafdrop-4.1.1-SNAPSHOT.jar \
     --protobufdesc.directory=$PWD/protobuf-descs \
     --kafka.brokerConnect=$KAFKA_BROKER
+```
+
+## Running from JAR
+```sh
+java --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
+    -jar target/kafdrop-<version>.jar \
+    --kafka.brokerConnect=<host:port,host:port>,...
 ```
 
 If unspecified, `kafka.brokerConnect` defaults to `localhost:9092`.
